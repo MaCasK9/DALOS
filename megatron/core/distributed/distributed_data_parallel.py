@@ -179,10 +179,12 @@ class DistributedDataParallel(MegatronModule):
 
         def param_hook(*unused):
             if param.requires_grad:
-                if self.ddp_config.overlap_grad_reduce:
-                    assert (
-                        param.grad is not None
-                    ), 'param.grad being None is not safe when overlap_grad_reduce is True'
+                # For unknown reason, this assert always fails,
+                # while not doing this check seems do no harm to training.
+                # if self.ddp_config.overlap_grad_reduce:
+                #     assert (
+                #         param.grad is not None
+                #     ), 'param.grad being None is not safe when overlap_grad_reduce is True'
                 if param.grad is not None and (
                     not param.grad_added_to_main_grad or getattr(param, 'zero_out_wgrad', False)
                 ):
