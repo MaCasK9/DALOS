@@ -52,7 +52,7 @@ class NumMicroBatchesCalculator(ABC):
         return self.current_global_batch_size
 
     @abstractmethod
-    def update(self, consumed_samples, consistency_check):
+    def update(self, consumed_samples, consistency_check, data_parallel_rank=0, local_sgd_rounds=[]):
         pass
 
 
@@ -71,7 +71,7 @@ class ConstantNumMicroBatches(NumMicroBatchesCalculator):
         assert self.num_micro_batches >= 1
         self.current_global_batch_size = global_batch_size
 
-    def update(self, consumed_samples, consistency_check):
+    def update(self, consumed_samples, consistency_check, data_parallel_rank=0, local_sgd_rounds=[]):
         pass
 
 
@@ -124,7 +124,7 @@ class RampupBatchsizeNumMicroBatches(NumMicroBatchesCalculator):
         self.update(0, False)
 
 
-    def update(self, consumed_samples, consistency_check):
+    def update(self, consumed_samples, consistency_check, data_parallel_rank=0, local_sgd_rounds=[]):
 
         if consumed_samples > self.ramup_samples:
             self.current_global_batch_size = self.global_batch_size
@@ -143,3 +143,13 @@ class RampupBatchsizeNumMicroBatches(NumMicroBatchesCalculator):
                                                  self.data_parallel_size)
         self.num_micro_batches = self.current_global_batch_size // \
                                  self.micro_batch_times_data_parallel_size
+
+class LocalSGDNumMicroBatches(NumMicroBatchesCalculator):
+    def __init__(self, micro_batch_size, data_parallel_size):
+        self.micro_batch_size = micro_batch_size
+        self.num_micro_batches = 1
+        self.current_global_batch_size = micro_batch_size * data_parallel_size
+
+    def update(self, consumed_samples, consistency_check, data_parallel_rank=0, local_sgd_rounds=[]):
+        self.num_micro_batches = local_sgd_rounds[data_parallel_rank]
+        self.current_global_batch_size = sum(local_sgd_rounds) * self.micro_batch_size

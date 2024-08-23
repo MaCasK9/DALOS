@@ -1152,3 +1152,23 @@ class StragglerDetector:
 __straggler__ = StragglerDetector()
 """StragglerDetector: private module variable, not be directly accessed
 """
+
+class LocalSGDCounter:
+    def __init__(self):
+        self.threshold = 1
+        self.count = 0
+
+    def set_threshold(self, threshold):
+        self.threshold = threshold
+
+    def get_threshold(self):
+        return self.threshold
+
+    def increment(self):
+        self.count += 1
+
+    def clear(self):
+        self.count = 0
+
+    def check_threshold(self) -> bool:
+        return self.count >= self.threshold

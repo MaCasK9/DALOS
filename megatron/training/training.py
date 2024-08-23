@@ -546,10 +546,19 @@ def setup_model_and_optimizer(model_provider_func,
 
 def train_step(forward_step_func, data_iterator,
                model, optimizer, opt_param_scheduler, config):
-    """Single training step."""
+    """
+    Single training step.
+
+    New: if --local-sgd is on, this is a step before sync.
+    """
     args = get_args()
     timers = get_timers()
 
+    # local_iters = 1
+    # if args.local_sgd:
+    #     local_iters = optimizer.local_sgd_counter.get_threshold()
+
+    # for _ in range(local_iters):
     # Set grad to zero.
     for model_chunk in model:
         model_chunk.zero_grad_buffer()
@@ -586,11 +595,18 @@ def train_step(forward_step_func, data_iterator,
         unwrapped_model = unwrap_model(model[0])
         unwrapped_model.update_momentum(args.curr_iteration)
 
+    # Empty unused memory.
+    if args.empty_unused_memory_level >= 2:
+        torch.cuda.empty_cache()
+
     # Update learning rate.
     if update_successful:
-        increment = get_num_microbatches() * \
-                    args.micro_batch_size * \
-                    args.data_parallel_size
+        if args.local_sgd:
+            increment = get_current_global_batch_size()
+        else:
+            increment = get_num_microbatches() * \
+                        args.micro_batch_size * \
+                        args.data_parallel_size
         opt_param_scheduler.step(increment=increment)
         skipped_iter = 0
     else:
@@ -1019,16 +1035,22 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         # checkpoint should be saved. If the number of microbatches is different
         # from the previous iteration, save a checkpoint. Then run consistency check
         # to make sure training configuration is still valid.
-        update_num_microbatches(args.consumed_train_samples, consistency_check=False)
+        if args.local_sgd:
+            update_num_microbatches(args.consumed_train_samples, consistency_check=False, data_parallel_rank=torch.distributed.get_rank(), local_sgd_rounds=[])
+        else:
+            update_num_microbatches(args.consumed_train_samples, consistency_check=False)
         if get_num_microbatches() != num_microbatches and iteration != 0:
             assert get_num_microbatches() > num_microbatches, \
                 "number of microbatches should be increasing due to batch size rampup"
             save_checkpoint_and_time(iteration, model, optimizer,
-                                     opt_param_scheduler,
-                                     num_floating_point_operations_so_far,
-                                     checkpointing_context)
+                                    opt_param_scheduler,
+                                    num_floating_point_operations_so_far,
+                                    checkpointing_context)
         num_microbatches = get_num_microbatches()
-        update_num_microbatches(args.consumed_train_samples, consistency_check=True)
+        if args.local_sgd:
+            update_num_microbatches(args.consumed_train_samples, consistency_check=True, data_parallel_rank=torch.distributed.get_rank(), local_sgd_rounds=[])
+        else:
+            update_num_microbatches(args.consumed_train_samples, consistency_check=True)
 
         args.curr_iteration = iteration
         loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
@@ -1039,9 +1061,12 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                        opt_param_scheduler,
                        config)
         iteration += 1
-        batch_size = mpu.get_data_parallel_world_size() * \
-                     args.micro_batch_size * \
-                     get_num_microbatches()
+        if args.local_sgd:
+            batch_size = get_current_global_batch_size()
+        else:
+            batch_size = mpu.get_data_parallel_world_size() * \
+                         args.micro_batch_size * \
+                         get_num_microbatches()
         args.consumed_train_samples += batch_size
         num_fp_ops = num_floating_point_operations(args, batch_size)
         num_floating_point_operations_so_far += num_fp_ops

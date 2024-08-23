@@ -17,6 +17,7 @@ from ..distributed import ParamAndGradBuffer, shard_buffer
 from .grad_scaler import MegatronGradScaler
 from .optimizer import MixedPrecisionOptimizer, _zero_grad_group_helper
 from .optimizer_config import OptimizerConfig
+from ..utils import LocalSGDCounter
 
 logger = getLogger(__name__)
 
@@ -489,6 +490,10 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         #   recast preexisting per-param state tensors.
         self.optimizer.param_groups = [g["orig_group"] for g in self.opt_group_ranges]
         self.optimizer.load_state_dict(self.optimizer.state_dict())
+
+        # local-SGD stuff
+        # if self.config.local_sgd:
+        #     self.local_sgd_counter = LocalSGDCounter
 
     def enable_pre_hook(self):
         """
@@ -1211,7 +1216,14 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         When using the distributed optimizer, the params are already laid out in a contiguous
         buffer (see mcore/distributed/param_and_grad_buffer.py for details), and so the
         all-gather will put the results in the right region of memory.
+
+        New: if --local-sgd is on, only launch all-gather when a threshold of iters is reached.
         """
+        # if self.config.local_sgd and not self.local_sgd_counter.check_threshold():
+        #     return
+        # elif self.config.local_sgd:
+        #     self.local_sgd_counter.clear()
+
         async_op = self.overlap_param_gather and not force_sync
         if self.update_successful:
             data_parallel_group = self.data_parallel_group
@@ -1427,6 +1439,9 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         asynchorous all-gathers that get overlapped with the next forward pass.
         """
         self.update_successful, grad_norm, num_zeros_in_grad = super().step()
+
+        # if self.config.local_sgd:
+        #     self.local_sgd_counter.increment()
 
         timers = self.config.timers
         if timers is not None:

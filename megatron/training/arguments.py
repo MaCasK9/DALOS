@@ -1356,6 +1356,8 @@ def _add_distributed_args(parser):
                         help='If set, distributed ranks initialize order is changed '
                         'from tp-dp-pp to tp-pp-dp. Make sure EP and CP aren\'t used '
                         'with this option enabled')
+    group.add_argument('--local-sgd', action='store_true', default=False,
+                        help='If set, use local-SGD')
     return parser
 
 

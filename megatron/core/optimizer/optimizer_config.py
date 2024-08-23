@@ -100,6 +100,12 @@ class OptimizerConfig:
     overlap_param_gather: bool = False
     """If true, overlap param all-gather with forward compute in distributed optimizer."""
 
+    ###########
+    # Local SGD
+    ###########
+    local_sgd: bool = False
+    """Use local-SGD"""
+
     ################
     # Miscellaneous
     ################
