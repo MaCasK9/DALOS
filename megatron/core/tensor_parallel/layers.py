@@ -228,6 +228,7 @@ class VocabParallelEmbedding(torch.nn.Module):
         if self.tensor_model_parallel_size > 1:
             output_parallel[input_mask, :] = 0.0
         # Reduce across all the model parallel GPUs.
+        # MARK: This is not to consider with pure DP, however it will conflict with MP
         output = reduce_from_tensor_model_parallel_region(output_parallel)
         return output
 

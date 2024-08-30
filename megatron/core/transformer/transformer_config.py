@@ -283,6 +283,9 @@ class TransformerConfig(ModelParallelConfig):
     rotary_percent: float = 0
     """Deprecated. Do not use."""
 
+    # DALOS config
+    delay_reduce: bool = False
+
     def __post_init__(self):
         """ Python dataclass method that is used to modify attributes after initialization.
             See https://docs.python.org/3/library/dataclasses.html#post-init-processing for more details.

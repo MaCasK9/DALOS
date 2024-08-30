@@ -574,7 +574,8 @@ def train_step(forward_step_func, data_iterator,
         seq_length=args.seq_length,
         micro_batch_size=args.micro_batch_size,
         decoder_seq_length=args.decoder_seq_length,
-        forward_only=False)
+        forward_only=False,
+        skip_reduce=config.delay_reduce)
 
     # Empty unused memory.
     if args.empty_unused_memory_level >= 1:
@@ -634,6 +635,11 @@ def train_step(forward_step_func, data_iterator,
                     # and so the denominator is 1.
                     numerator += val
                     denominator += 1
+            # DALOS only: loss report reduce moved from loss func to here.
+            if config.delay_reduce:
+                report_loss = torch.tensor([numerator, denominator], dtype=torch.float32, device='cuda')
+                torch.distributed.all_reduce(report_loss, group=mpu.get_data_parallel_group())
+                numerator, denominator = report_loss[0].clone().detach(), report_loss[1].clone().detach().to(torch.int)
             loss_reduced[key] = numerator / denominator
         return loss_reduced, skipped_iter, grad_norm, num_zeros_in_grad
     return {}, skipped_iter, grad_norm, num_zeros_in_grad
@@ -974,6 +980,8 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         if len(model) == 1:
             config.param_sync_func = config.param_sync_func[0]
     config.finalize_model_grads_func = finalize_model_grads
+    if args.local_sgd:
+        config.delay_reduce = True
 
     timers('interval-time', log_level=0).start(barrier=True)
     print_datetime('before the start of training step')

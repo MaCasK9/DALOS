@@ -173,6 +173,7 @@ def forward_step(
     checkpoint_activations_microbatch=None,
     is_first_microbatch=False,
     current_microbatch=None,
+    skip_reduce=False,
 ):
 
     """Forward step for passed-in model.
@@ -212,7 +213,7 @@ def forward_step(
     num_tokens = torch.tensor(0, dtype=torch.int)
     if parallel_state.is_pipeline_last_stage():
         if not collect_non_loss_data:
-            outputs = loss_func(output_tensor)
+            outputs = loss_func(output_tensor, skip_reduce)
             if len(outputs) == 3:
                 output_tensor, num_tokens, loss_reduced = outputs
             else:
@@ -341,6 +342,7 @@ def forward_backward_no_pipelining(
     forward_only: bool = False,
     collect_non_loss_data: bool = False,
     first_val_step: bool = None,
+    skip_reduce: bool = False,
 ):
     """Run forward and backward passes with no pipeline parallelism
     (no inter-stage communication).
@@ -386,6 +388,7 @@ def forward_backward_no_pipelining(
                 collect_non_loss_data,
                 is_first_microbatch=check_first_val_step(first_val_step, forward_only, i == 0),
                 current_microbatch=i,
+                skip_reduce=skip_reduce,
             )
             total_num_tokens += num_tokens.item()
             if not forward_only:
@@ -406,6 +409,7 @@ def forward_backward_no_pipelining(
             first_val_step, forward_only, num_microbatches == 1
         ),
         current_microbatch=num_microbatches - 1,
+        skip_reduce=skip_reduce,
     )
     total_num_tokens += num_tokens.item()
 

@@ -587,6 +587,9 @@ def core_transformer_config_from_args(args, config_class=None):
         kw_args['num_query_groups'] = args.num_query_groups
     else:
         kw_args['num_query_groups'] = None
+    # DALOS config
+    if args.local_sgd:
+        kw_args['delay_reduce'] = True
 
     # Return config.
     return config_class(**kw_args)

@@ -114,6 +114,7 @@ class LanguageModelEmbedding(MegatronModule):
             embeddings = embeddings.float()
 
         # Dropout.
+        # MARK: This is not to consider with pure DP, however, it might have sth to do with MP/SP
         if self.config.sequence_parallel:
             embeddings = tensor_parallel.scatter_to_sequence_parallel_region(embeddings)
             # `scatter_to_sequence_parallel_region` returns a view, which prevents

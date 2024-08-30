@@ -178,6 +178,7 @@ class TransformerBlock(MegatronModule):
 
         if self.post_process and self.post_layer_norm:
             # Final layer norm before output.
+            # MARK: This seems to have no effect, but not sure
             self.final_layernorm = TENorm(
                 config=self.config,
                 hidden_size=self.config.hidden_size,

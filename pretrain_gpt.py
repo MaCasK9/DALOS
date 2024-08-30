@@ -112,7 +112,7 @@ def get_batch(data_iterator):
     return batch.values()
 
 
-def loss_func(loss_mask: torch.Tensor, output_tensor: torch.Tensor):
+def loss_func(loss_mask: torch.Tensor, output_tensor: torch.Tensor, skip_reduce: bool = False):
     """Loss function.
 
     Args:
@@ -144,7 +144,9 @@ def loss_func(loss_mask: torch.Tensor, output_tensor: torch.Tensor):
 
     # Reduce loss for logging.
     reporting_loss = loss.clone().detach()
-    torch.distributed.all_reduce(reporting_loss, group=mpu.get_data_parallel_group())
+    # Preserve legacy reduce of megatron. Now in DALOS, this reduce is moved to end of iter.
+    if not skip_reduce:
+        torch.distributed.all_reduce(reporting_loss, group=mpu.get_data_parallel_group())
 
     num_tokens = reporting_loss[1].clone().detach().to(torch.int)
     return (
