@@ -54,6 +54,11 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     else:
         args = parser.parse_args()
 
+    # Process train_delay
+    if args.train_delay is not None:
+        args.train_delay = list(map(int, args.train_delay.split(',')))
+        args.train_delay = [x/1000.0 for x in args.train_delay]
+
     # Experimental yaml
     if args.yaml_cfg is not None:
         from .yaml_arguments import load_yaml
@@ -1117,6 +1122,11 @@ def _add_training_args(parser):
     group.add_argument('--disable-tp-comm-split-rs', action='store_false',
                        help='Disables the Reduce-Scatter overlap with fprop GEMM.',
                        dest='tp_comm_split_rs')
+    
+    group.add_argument('--train-delay', type=str, default=None,
+                       help='Training delay amount for all processes, '
+                       'should be int separated by comma ordered by rank, '
+                       'each iter will delay given ms.')
 
     return parser
 

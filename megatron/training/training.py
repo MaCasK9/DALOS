@@ -9,6 +9,8 @@ import logging
 import math
 import os
 import sys
+
+import torch.distributed
 from .log_handler import CustomHandler
 # Make default logging level INFO, but filter out all log messages not from MCore.
 logging.basicConfig(handlers=[CustomHandler()], level=logging.INFO)
@@ -516,6 +518,9 @@ def setup_model_and_optimizer(model_provider_func,
     for f in dataclasses.fields(OptimizerConfig):
         if hasattr(args, f.name):
             kwargs[f.name] = getattr(args, f.name)
+    # Process train_delay
+    if kwargs["train_delay"] is not None:
+        kwargs["train_delay"] = kwargs["train_delay"][torch.distributed.get_rank()]
     config = OptimizerConfig(**kwargs)
     config.timers = timers
     optimizer = get_megatron_optimizer(config, model, no_wd_decay_cond,
