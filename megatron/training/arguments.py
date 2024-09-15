@@ -556,6 +556,10 @@ def core_transformer_config_from_args(args, config_class=None):
     # Config class.
     config_class = config_class or TransformerConfig
 
+    # Process train_delay
+    if args.train_delay is not None:
+        args.train_delay = args.train_delay[torch.distributed.get_rank()]
+
     # Translate args to core transformer configuration
     kw_args = {}
     for f in dataclasses.fields(config_class):

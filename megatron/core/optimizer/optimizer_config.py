@@ -107,12 +107,6 @@ class OptimizerConfig:
     """Use local-SGD"""
 
     ################
-    # Training Delay
-    ################
-    train_delay: float = 0.0
-    """Training delay in seconds for each forward."""
-
-    ################
     # Miscellaneous
     ################
     clip_grad: float = 1.0

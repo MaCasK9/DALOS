@@ -12,6 +12,8 @@ from megatron.core.pipeline_parallel import p2p_communication
 from megatron.core.transformer.moe.router import MoEAuxLossAutoScaler
 from megatron.core.utils import get_attr_wrapped_model, get_model_config, get_model_type
 
+import time
+
 # Types
 Shape = Union[List[int], torch.Size]
 
@@ -209,6 +211,10 @@ def forward_step(
             output_tensor, loss_func = forward_step_func(
                 data_iterator, model, checkpoint_activations_microbatch
             )
+
+    # Train delay stuff
+    if config.train_delay is not None:
+        time.sleep(config.train_delay)
 
     num_tokens = torch.tensor(0, dtype=torch.int)
     if parallel_state.is_pipeline_last_stage():
