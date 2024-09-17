@@ -287,6 +287,11 @@ class TransformerConfig(ModelParallelConfig):
     # DALOS config
     ##############
     delay_reduce: bool = False
+    """If True, delay the reduction of the loss from every forward to every iter."""
+
+    pp_layer_distribution: list = None
+    """List of integers that specify the number of layers in each pipeline parallel stage. If None, layers are evenly distributed."""
+    """Note: The list is for all nodes, with tp, intergers for each pp group should sum to num_layers."""
 
     ################
     # Training Delay

@@ -59,6 +59,10 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
         args.train_delay = list(map(int, args.train_delay.split(',')))
         args.train_delay = [x/1000.0 for x in args.train_delay]
 
+    # Process pp_layer_distribution
+    if args.pp_layer_distribution is not None:
+        args.pp_layer_distribution = list(map(int, args.pp_layer_distribution.split(',')))
+
     # Experimental yaml
     if args.yaml_cfg is not None:
         from .yaml_arguments import load_yaml
@@ -194,6 +198,7 @@ def validate_args(args, defaults={}):
                     args.pipeline_model_parallel_size, 'split rank needs'\
                     ' to be less than pipeline model parallel size ({})'.format(
                             args.pipeline_model_parallel_size)
+        # Checks for pipeline parallelism layer distribution depend on pp group, therefore is done in group init.
 
     if args.tp_comm_overlap:
         assert args.sequence_parallel == True, 'Tensor parallel communication/GEMM overlap can happen only when sequence parallelism is enabled'
@@ -1375,6 +1380,8 @@ def _add_distributed_args(parser):
                         'with this option enabled')
     group.add_argument('--local-sgd', action='store_true', default=False,
                         help='If set, use local-SGD')
+    group.add_argument('--pp-layer-distribution', type=str, default=None,
+                        help='Layer distribution for pipeline parallelism.')
     return parser
 
 

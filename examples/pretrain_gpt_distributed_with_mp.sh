@@ -4,18 +4,18 @@
 
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 
-GPUS_PER_NODE=8
+GPUS_PER_NODE=4
 # Change for multinode config
 MASTER_ADDR=localhost
-MASTER_PORT=6000
+MASTER_PORT=21121
 NNODES=1
 NODE_RANK=0
 WORLD_SIZE=$(($GPUS_PER_NODE*$NNODES))
 
-CHECKPOINT_PATH=<Specify path>
-VOCAB_FILE=<Specify path to file>/gpt2-vocab.json
-MERGE_FILE=<Specify path to file>/gpt2-merges.txt
-DATA_PATH=<Specify path and file prefix>_text_document
+CHECKPOINT_PATH=./checkpoints
+VOCAB_FILE=./data/gpt2-vocab.json
+MERGE_FILE=./data/gpt2-merges.txt
+DATA_PATH=./data/gpt2-enwiki_text_document
 
 DISTRIBUTED_ARGS="
     --nproc_per_node $GPUS_PER_NODE \
@@ -34,10 +34,10 @@ GPT_ARGS="
     --num-attention-heads 16 \
     --seq-length 1024 \
     --max-position-embeddings 1024 \
-    --micro-batch-size 4 \
-    --global-batch-size 16 \
+    --micro-batch-size 2 \
+    --global-batch-size 4 \
     --lr 0.00015 \
-    --train-iters 500000 \
+    --train-iters 300000 \
     --lr-decay-iters 320000 \
     --lr-decay-style cosine \
     --min-lr 1.0e-5 \

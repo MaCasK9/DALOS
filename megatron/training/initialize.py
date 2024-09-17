@@ -257,6 +257,8 @@ def _initialize_distributed():
                 distributed_timeout_minutes=args.distributed_timeout_minutes,
                 nccl_communicator_config_path=args.nccl_communicator_config_path,
                 order='tp-cp-ep-dp-pp' if not args.use_tp_pp_dp_mapping else 'tp-pp-dp',
+                pp_layer_distribution=args.pp_layer_distribution,
+                num_layers=args.num_layers,
             )
             if args.rank == 0:
                 print(

@@ -53,6 +53,9 @@ def get_num_layers_to_build(config: TransformerConfig) -> int:
 
         num_layers_to_build = num_layers_per_virtual_rank
 
+    elif config.pp_layer_distribution is not None:
+        num_layers_to_build = config.pp_layer_distribution[torch.distributed.get_rank()]
+
     else:
         # Non-interleaved pipeline parallelism:
         # Each stage gets a contiguous set of layers.

@@ -306,6 +306,8 @@ def initialize_model_parallel(
     nccl_communicator_config_path: Optional[str] = None,
     distributed_timeout_minutes: int = 30,
     order: str = "tp-cp-ep-dp-pp",
+    pp_layer_distribution: Optional[List[int]] = None,
+    num_layers: int = 0,
 ) -> None:
     """Initialize model data parallel groups.
 
@@ -567,6 +569,9 @@ def initialize_model_parallel(
         if rank in ranks:
             _TENSOR_MODEL_PARALLEL_GROUP = group
             _TENSOR_MODEL_PARALLEL_GLOBAL_RANKS = ranks
+        if pp_layer_distribution is not None:
+            assert sum([pp_layer_distribution[rank] for rank in ranks]) == num_layers, \
+            'sum of pp_layer_distribution should be equal to num_layers'
 
     # Build the pipeline model-parallel groups and embedding groups
     # (first and last rank in each pipeline model-parallel group).
