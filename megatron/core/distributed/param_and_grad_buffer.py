@@ -11,6 +11,8 @@ import torch
 from .. import parallel_state
 from .distributed_data_parallel_config import DistributedDataParallelConfig
 
+from .utils import warpped_all_reduce
+
 logger = getLogger(__name__)
 
 
@@ -124,7 +126,7 @@ class Bucket:
                 async_op=self.ddp_config.overlap_grad_reduce,
             )
         else:
-            self.communication_handle = torch.distributed.all_reduce(
+            self.communication_handle = warpped_all_reduce(
                 self.grad_data,
                 group=self.data_parallel_group,
                 async_op=self.ddp_config.overlap_grad_reduce,

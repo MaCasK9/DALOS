@@ -530,7 +530,13 @@ def validate_args(args, defaults={}):
         assert len(args.heuristic_workload_allocation) == args.world_size, \
             "workload allocation should be set for every rank."
     if args.heuristic_group_communication is not None:
-        assert len(args.heuristic_group_communication) == args.world_size, \
+        group_split = args.heuristic_group_communication.split(',')
+        args.heuristic_group_communication = []
+        rank_count = 0
+        for group in group_split:
+            args.heuristic_group_communication.append(list(map(int, group.split(' '))))
+            rank_count += len(group.split(' '))
+        assert rank_count == args.world_size, \
             "group communication should be set for every rank."
     if len(args.profile_tensor_size) == 0:
         args.profile_tensor_size = (2048, 2048)
