@@ -1019,6 +1019,12 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
     # static dalos configs
     if args.dynamic_train_delay and (args.train_delay_interval == 0):
         config.train_delay = max(round(random.gauss(args.train_delay_mean, args.train_delay_var ** 0.5)), 0)
+    if args.heuristic_group_communication is not None:
+        mpu.build_temporary_groups(
+            args.heuristic_group_communication,
+            distributed_timeout_minutes=args.distributed_timeout_minutes,
+            nccl_communicator_config_path=args.nccl_communicator_config_path
+        )
 
     while iteration < args.train_iters:
         if args.profile and \

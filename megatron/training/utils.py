@@ -5,6 +5,7 @@
 import sys
 
 import torch
+import torch.distributed
 
 try:
     from apex.multi_tensor_apply import multi_tensor_applier

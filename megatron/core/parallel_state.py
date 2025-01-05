@@ -84,6 +84,11 @@ _GLOBAL_MEMORY_BUFFER = None
 # MOE logging
 _MOE_AUX_LOSSES_LOGGING_TRACKER = {}
 
+# grouped all-reduce group
+_INTRA_GROUP_ALL_REDUCE_GROUP = None
+_INTRA_GROUP_REPRESENTATIVE = None
+_INTER_GROUP_ALL_REDUCE_GROUP = None
+
 
 def get_nccl_options(pg_name, nccl_comm_cfgs):
     """Set the NCCL process group options.
@@ -1244,3 +1249,65 @@ def destroy_model_parallel():
     _MPU_EXPERT_MODEL_PARALLEL_WORLD_SIZE = None
     global _MPU_EXPERT_MODEL_PARALLEL_RANK
     _MPU_EXPERT_MODEL_PARALLEL_RANK = None
+
+def build_temporary_groups(
+    groups,
+    nccl_communicator_config_path: Optional[str] = None,
+    distributed_timeout_minutes: int = 30
+):
+    rank = torch.distributed.get_rank()
+
+    nccl_comm_cfgs = {}
+    if nccl_communicator_config_path is not None:
+        try:
+            import yaml
+        except ImportError:
+            raise RuntimeError(
+                "Cannot import `yaml`. Setting custom nccl communicator configs "
+                "requires the yaml package."
+            )
+
+        with open(nccl_communicator_config_path, "r") as stream:
+            nccl_comm_cfgs = yaml.safe_load(stream)
+
+    timeout = timedelta(minutes=distributed_timeout_minutes)
+
+    global _INTRA_GROUP_ALL_REDUCE_GROUP
+    global _INTRA_GROUP_REPRESENTATIVE
+    global _INTER_GROUP_ALL_REDUCE_GROUP
+    if _INTRA_GROUP_ALL_REDUCE_GROUP is not None:
+        torch.distributed.destroy_process_group(_INTRA_GROUP_ALL_REDUCE_GROUP)
+        _INTRA_GROUP_ALL_REDUCE_GROUP = None
+        _INTRA_GROUP_REPRESENTATIVE = None
+    if _INTER_GROUP_ALL_REDUCE_GROUP is not None:
+        torch.distributed.destroy_process_group(_INTER_GROUP_ALL_REDUCE_GROUP)
+        _INTER_GROUP_ALL_REDUCE_GROUP = None
+
+    inter_ranks = []
+    for ranks in groups:
+        group = torch.distributed.new_group(
+            ranks, timeout=timeout, pg_options=get_nccl_options('intra', nccl_comm_cfgs)
+        )
+        if rank in ranks:
+            _INTRA_GROUP_ALL_REDUCE_GROUP = group
+            _INTRA_GROUP_REPRESENTATIVE = min(ranks)
+        inter_ranks.append(min(ranks))
+    group = torch.distributed.new_group(
+        inter_ranks, timeout=timeout, pg_options=get_nccl_options('inter', nccl_comm_cfgs)
+    )
+    if rank in inter_ranks:
+        _INTER_GROUP_ALL_REDUCE_GROUP = group
+
+def get_intra_group_all_reduce_group():
+    assert _INTRA_GROUP_ALL_REDUCE_GROUP is not None, \
+        "intra-group all-reduce group not initialized."
+    return _INTRA_GROUP_ALL_REDUCE_GROUP
+
+def get_intra_group_representative():
+    assert _INTRA_GROUP_REPRESENTATIVE is not None, \
+        "intra-group representative not chosen."
+    return _INTRA_GROUP_REPRESENTATIVE
+
+def get_inter_group_all_reduce_group():
+    # None means current rank is not a representative
+    return _INTER_GROUP_ALL_REDUCE_GROUP
