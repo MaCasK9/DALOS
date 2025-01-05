@@ -36,6 +36,8 @@ from megatron.legacy.data.data_samplers import build_pretraining_data_loader
 from megatron.core.transformer.moe.moe_utils import track_moe_metrics
 from megatron.core.pipeline_parallel import get_forward_backward_func
 
+import random
+
 from .utils import (
     calc_params_l2_norm,
     check_adlr_autoresume_termination,
@@ -565,7 +567,8 @@ def train_step(forward_step_func, data_iterator,
         seq_length=args.seq_length,
         micro_batch_size=args.micro_batch_size,
         decoder_seq_length=args.decoder_seq_length,
-        forward_only=False)
+        forward_only=False,
+        workload_allocation=args.workload_allocation)
 
     # Empty unused memory.
     if args.empty_unused_memory_level >= 1:
@@ -618,6 +621,11 @@ def train_step(forward_step_func, data_iterator,
                     # and so the denominator is 1.
                     numerator += val
                     denominator += 1
+            if args.workload_allocation:
+                report_loss = torch.tensor([numerator, denominator], device='cuda')
+                torch.distributed.all_reduce(report_loss, group=mpu.get_data_parallel_group())
+                numerator = report_loss[0].clone().detach()
+                denominator = report_loss[1].clone().detach().to(torch.int)
             loss_reduced[key] = numerator / denominator
         return loss_reduced, skipped_iter, grad_norm, num_zeros_in_grad
     return {}, skipped_iter, grad_norm, num_zeros_in_grad
@@ -1008,12 +1016,21 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 'validation_iterations_time_msecs_avg': validation_iterations_time_msecs_avg
             })
 
+    # static dalos configs
+    if args.dynamic_train_delay and (args.train_delay_interval == 0):
+        config.train_delay = max(round(random.gauss(args.train_delay_mean, args.train_delay_var ** 0.5)), 0)
+
     while iteration < args.train_iters:
         if args.profile and \
            iteration == args.profile_step_start and \
            torch.distributed.get_rank() in args.profile_ranks:
             torch.cuda.cudart().cudaProfilerStart()
             torch.autograd.profiler.emit_nvtx(record_shapes=True).__enter__()
+
+        # periodical dalos config
+        if args.dynamic_train_delay and (args.train_delay_interval > 0) \
+            and (iteration % args.train_delay_interval == 0):
+            config.train_delay = max(round(random.gauss(args.train_delay_mean, args.train_delay_var ** 0.5)), 0)
 
         # Update number of microbatches first without consistency check to decide if a
         # checkpoint should be saved. If the number of microbatches is different
@@ -1039,9 +1056,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                        opt_param_scheduler,
                        config)
         iteration += 1
-        batch_size = mpu.get_data_parallel_world_size() * \
-                     args.micro_batch_size * \
-                     get_num_microbatches()
+        batch_size = get_current_global_batch_size()
         args.consumed_train_samples += batch_size
         num_fp_ops = num_floating_point_operations(args, batch_size)
         num_floating_point_operations_so_far += num_fp_ops

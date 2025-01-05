@@ -6,11 +6,13 @@ from typing import Callable, Iterator, List, Optional, Union
 import torch
 from torch.autograd.variable import Variable
 
-from megatron.core import parallel_state
+from megatron.core import mpu, parallel_state
 from megatron.core.enums import ModelType
 from megatron.core.pipeline_parallel import p2p_communication
 from megatron.core.transformer.moe.router import MoEAuxLossAutoScaler
 from megatron.core.utils import get_attr_wrapped_model, get_model_config, get_model_type
+
+import time
 
 # Types
 Shape = Union[List[int], torch.Size]
@@ -184,6 +186,10 @@ def forward_step(
     if config.timers is not None:
         config.timers('forward-compute', log_level=2).start()
 
+    # Implement train delay
+    if config.train_delay > 0:
+        time.sleep(config.train_delay/1000.0)
+
     if is_first_microbatch and hasattr(model, 'set_is_first_microbatch'):
         model.set_is_first_microbatch()
     if current_microbatch is not None:
@@ -341,6 +347,7 @@ def forward_backward_no_pipelining(
     forward_only: bool = False,
     collect_non_loss_data: bool = False,
     first_val_step: bool = None,
+    workload_allocation: bool = False
 ):
     """Run forward and backward passes with no pipeline parallelism
     (no inter-stage communication).
@@ -411,6 +418,9 @@ def forward_backward_no_pipelining(
 
     if not forward_only:
         backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, config)
+
+    if workload_allocation:
+        torch.distributed.all_reduce(total_num_tokens, group=mpu.get_data_parallel_group())
 
     if config.finalize_model_grads_func is not None and not forward_only:
         # Finalize model grads (perform full grad all-reduce / reduce-scatter for

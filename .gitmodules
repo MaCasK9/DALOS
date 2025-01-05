@@ -1,0 +1,3 @@
+[submodule "megatron/training/dynamicDP"]
+	path = megatron/training/dynamicDP
+	url = https://github.com/adelamingyi/dynamicDP.git

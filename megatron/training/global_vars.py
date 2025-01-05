@@ -35,9 +35,10 @@ def get_current_global_batch_size():
     return _GLOBAL_NUM_MICROBATCHES_CALCULATOR.get_current_global_batch_size()
 
 
-def update_num_microbatches(consumed_samples, consistency_check=True):
+def update_num_microbatches(consumed_samples, consistency_check=True, workload_allocation=None):
     _GLOBAL_NUM_MICROBATCHES_CALCULATOR.update(consumed_samples,
-                                               consistency_check)
+                                               consistency_check,
+                                               workload_allocation)
 
 
 def get_tokenizer():
@@ -95,7 +96,8 @@ def set_global_variables(args, build_tokenizer=True):
     _ensure_var_is_not_initialized(_GLOBAL_ARGS, 'args')
     set_args(args)
 
-    _build_num_microbatches_calculator(args)
+    # This conflicts with ImbalanceNumMicroBatches, moved after distributed init
+    # _build_num_microbatches_calculator(args)
     if build_tokenizer:
         _ = _build_tokenizer(args)
     _set_tensorboard_writer(args)
