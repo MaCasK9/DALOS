@@ -18,7 +18,7 @@ from megatron.core import mpu, tensor_parallel
 from megatron.training.arguments import parse_args, validate_args
 from megatron.training.yaml_arguments import validate_yaml
 from megatron.training.checkpointing import load_args_from_checkpoint
-from megatron.training.global_vars import set_global_variables
+from megatron.training.global_vars import set_global_variables, _build_num_microbatches_calculator
 from megatron.legacy.model.transformer import bias_dropout_add_fused_train
 from megatron.legacy.model.fused_bias_gelu import bias_gelu
 
@@ -69,7 +69,11 @@ def initialize_megatron(
             print("> setting random seeds to {} ...".format(args.seed))
         _set_random_seed(args.seed, args.data_parallel_random_init)
 
+        # Due to ImbalanceNumMicroBatches, moved here
+        _build_num_microbatches_calculator(args)
+
     if skip_mpu_initialization:
+        _build_num_microbatches_calculator(args)
         return None
 
     args = get_args()

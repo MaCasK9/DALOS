@@ -43,6 +43,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     parser = _add_transformer_engine_args(parser)
     parser = _add_retro_args(parser)
     parser = _add_experimental_args(parser)
+    parser = _add_dalos_args(parser)
 
     # Custom arguments.
     if extra_args_provider is not None:
@@ -520,6 +521,48 @@ def validate_args(args, defaults={}):
     if args.use_tp_pp_dp_mapping:
         assert args.context_parallel_size * args.expert_model_parallel_size <= 1, \
             "context_parallel and expert_model_parallel can't be used with tp-pp-dp mapping."
+        
+    # Process and check DALOS args
+    if args.static_train_delay is not None:
+        assert len(args.static_train_delay) == args.world_size, \
+            "train delay should be set for every rank."
+    if args.heuristic_workload_allocation is not None:
+        assert len(args.heuristic_workload_allocation) == args.world_size, \
+            "workload allocation should be set for every rank."
+    if args.heuristic_group_communication is not None:
+        assert len(args.heuristic_group_communication) == args.world_size, \
+            "group communication should be set for every rank."
+    if len(args.profile_tensor_size) == 0:
+        args.profile_tensor_size = (2048, 2048)
+    else:
+        args.profile_tensor_size = tuple(args.profile_tensor_size)
+
+    if args.dynamic_train_delay:
+        assert args.static_train_delay is None, \
+            "train delay can't be static AND dynamic."
+        assert args.profile_interval > 0, \
+            "dynamic train delay needs a positive profile interval."
+        assert args.train_delay_mean > 0 and args.train_delay_var > 0, \
+            "dynamic train delay needs positive mean and var args."
+    assert ((args.heuristic_workload_allocation is not None) + \
+            args.static_workload_allocation + args.dynamic_workload_allocation) <= 1, \
+        "workload allocation pattern MUST NOT be multiple."
+    if ((args.heuristic_workload_allocation is not None) + \
+        args.static_workload_allocation + args.dynamic_workload_allocation) == 1:
+        args.workload_allocation = True
+    else:
+        args.workload_allocation = False
+    assert ((args.heuristic_group_communication is not None) + \
+            args.static_group_communication + args.dynamic_group_communication) <= 1, \
+        "group communication pattern MUST NOT be multiple."
+    if ((args.heuristic_group_communication is not None) + \
+        args.static_group_communication + args.dynamic_group_communication) == 1:
+        args.group_communication = True
+    else:
+        args.group_communication = False
+    if args.dynamic_workload_allocation or args.dynamic_group_communication:
+        assert args.profile_interval > 0, \
+            "dynamic workload allocation or group communication need profiling."
 
     # Print arguments.
     _print_args("arguments", args)
@@ -587,6 +630,9 @@ def core_transformer_config_from_args(args, config_class=None):
         kw_args['num_query_groups'] = args.num_query_groups
     else:
         kw_args['num_query_groups'] = None
+    # dalos configs
+    if args.static_train_delay is not None:
+        kw_args['train_delay'] = args.static_train_delay[torch.distributed.get_rank()]
 
     # Return config.
     return config_class(**kw_args)
@@ -1656,4 +1702,43 @@ def _add_experimental_args(parser):
     group.add_argument('--yaml-cfg', type=str, default=None,
                        help = 'Config file to add additional arguments')
 
+    return parser
+
+def _add_dalos_args(parser):
+    group = parser.add_argument_group(title='dalos')
+
+    group.add_argument('--static-train-delay', type=int, default=None, nargs='*',
+                       help='Static train delay amount in miliseconds for each rank')
+    group.add_argument('--dynamic-train-delay', action='store_true',
+                       help='Use dynamic train delay')
+    group.add_argument('--train-delay-interval', type=int, default=0,
+                       help='Change train delay every n iters.'
+                       'Default is 0, never change (generate at beginning of training)')
+    group.add_argument('--train-delay-mean', type=int, default=None,
+                       help='Average train delay amount in miliseconds.'
+                       'Ignored without --dynamic-train-delay')
+    group.add_argument('--train-delay-var', type=float, default=None,
+                       help='Train delay variance amount.'
+                       'Ignored without --dynamic-train-delay')
+    group.add_argument('--heuristic-workload-allocation', type=int, default=None, nargs='*',
+                       help='Micro batches consumed during one update iter for each rank')
+    group.add_argument('--static-workload-allocation', action='store_true',
+                       help='Profile compute capability and allocate workload ONCE at '
+                       'the beginning of training')
+    group.add_argument('--dynamic-workload-allocation', action='store_true',
+                       help='Profile compute capability and allocate workload periodically')
+    group.add_argument('--heuristic-group-communication', type=str, default=None,
+                       help='Manually division for group all-reduce.'
+                       'Usage: groups split by comma, ranks in one group split by space')
+    group.add_argument('--static-group-communication', action='store_true',
+                       help='Profile communicate environment and divide groups ONCE at '
+                       'the beginning of training')
+    group.add_argument('--dynamic-group-communication', action='store_true',
+                       help='Profile communicate environment and divide groups periodically')
+    group.add_argument('--profile-interval', type=int, default=0,
+                       help='Profile compute capability and communicate environment every n iters.'
+                       'Default is 0, never profile.')
+    group.add_argument('--profile-tensor-size', type=int, default=[2048, 2048], nargs='*',
+                       help='Size of tensor used in communicate environment profile')
+    
     return parser

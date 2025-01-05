@@ -2,14 +2,29 @@
 
 """Megatron number of micro-batches calculators."""
 
+import torch
+
+from megatron.core import mpu
+
 from abc import ABC
 from abc import abstractmethod
 
 
 def build_num_microbatches_calculator(args):
+    # Imbalance num micro-batches used for workload allocation.
+    if args.heuristic_workload_allocation is not None:
+        num_microbatches_calculator = ImbalanceNumMicroBatches(
+            args.micro_batch_size, args.data_parallel_size,
+            mpu.get_data_parallel_rank(), args.heuristic_workload_allocation
+        )
+    elif args.static_workload_allocation or args.dynamic_workload_allocation:
+        num_microbatches_calculator = ImbalanceNumMicroBatches(
+            args.micro_batch_size, args.data_parallel_size,
+            mpu.get_data_parallel_rank()
+        )
 
     # Constant num micro-batches.
-    if args.rampup_batch_size is None:
+    elif args.rampup_batch_size is None:
         num_microbatches_calculator = ConstantNumMicroBatches(
             args.global_batch_size, args.micro_batch_size,
             args.data_parallel_size)
@@ -52,7 +67,7 @@ class NumMicroBatchesCalculator(ABC):
         return self.current_global_batch_size
 
     @abstractmethod
-    def update(self, consumed_samples, consistency_check):
+    def update(self, consumed_samples, consistency_check, workload_allocation):
         pass
 
 
@@ -71,7 +86,7 @@ class ConstantNumMicroBatches(NumMicroBatchesCalculator):
         assert self.num_micro_batches >= 1
         self.current_global_batch_size = global_batch_size
 
-    def update(self, consumed_samples, consistency_check):
+    def update(self, consumed_samples, consistency_check, workload_allocation):
         pass
 
 
@@ -124,7 +139,7 @@ class RampupBatchsizeNumMicroBatches(NumMicroBatchesCalculator):
         self.update(0, False)
 
 
-    def update(self, consumed_samples, consistency_check):
+    def update(self, consumed_samples, consistency_check, workload_allocation):
 
         if consumed_samples > self.ramup_samples:
             self.current_global_batch_size = self.global_batch_size
@@ -143,3 +158,21 @@ class RampupBatchsizeNumMicroBatches(NumMicroBatchesCalculator):
                                                  self.data_parallel_size)
         self.num_micro_batches = self.current_global_batch_size // \
                                  self.micro_batch_times_data_parallel_size
+
+class ImbalanceNumMicroBatches(NumMicroBatchesCalculator):
+    def __init__(self, micro_batch_size, data_parallel_size, dp_rank, workload_allocation=None):
+        self.micro_batch_size = micro_batch_size
+        self.data_parallel_size = data_parallel_size
+        self.dp_rank = dp_rank
+        if workload_allocation is None:
+            self.workload_allocation = [1] * data_parallel_size
+        else:
+            self.workload_allocation = workload_allocation
+        self.num_micro_batches = self.workload_allocation[self.dp_rank]
+        self.current_global_batch_size = sum(self.workload_allocation) * self.micro_batch_size
+
+    def update(self, consumed_samples, consistency_check, workload_allocation):
+        if workload_allocation is not None:
+            self.workload_allocation = workload_allocation
+            self.num_micro_batches = self.workload_allocation[self.dp_rank]
+            self.current_global_batch_size = sum(self.workload_allocation) * self.micro_batch_size
