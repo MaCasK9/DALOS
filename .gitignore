@@ -9,3 +9,4 @@ logs
 .vscode
 data
 experiment
+nvidia-container_*

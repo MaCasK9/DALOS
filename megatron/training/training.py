@@ -35,6 +35,7 @@ from megatron.training.optimizer_param_scheduler import OptimizerParamScheduler
 from megatron.legacy.data.data_samplers import build_pretraining_data_loader
 from megatron.core.transformer.moe.moe_utils import track_moe_metrics
 from megatron.core.pipeline_parallel import get_forward_backward_func
+from megatron.training.dalos import DALOS
 
 import random
 
@@ -410,13 +411,14 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
             tensor_parallel.set_defaults_if_not_set_tensor_model_parallel_attributes(param)
 
     # Print number of parameters.
+    args.num_paras = sum([sum([p.nelement() for p in model_module.parameters()]) \
+                 for model_module in model])
     if mpu.get_data_parallel_rank() == 0:
         print(' > number of parameters on (tensor, pipeline) '
               'model parallel rank ({}, {}): {}'.format(
             mpu.get_tensor_model_parallel_rank(),
             mpu.get_pipeline_model_parallel_rank(),
-            sum([sum([p.nelement() for p in model_module.parameters()])
-                 for model_module in model])), flush=True)
+            args.num_paras), flush=True)
 
     # GPU allocation.
     for model_module in model:
@@ -1025,6 +1027,28 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             distributed_timeout_minutes=args.distributed_timeout_minutes,
             nccl_communicator_config_path=args.nccl_communicator_config_path
         )
+    if args.dalos_optimize:
+        # F = 96Bsl(h^2)*(1+s/6h+V/16lh)
+        # FLOPs estimate from megatron paper
+        # Here B is ignored since we need FLOPs of one sample
+        compute_complexity = 96 * args.seq_length * args.num_layers * \
+                            (args.hidden_size ** 2) * (1 + args.seq_length / (6 * args.hidden_size) + \
+                             args.padded_vocab_size / (16 * args.num_layers * args.hidden_size))
+        dalos = DALOS(args.world_size, args.num_paras, args.fp16, \
+                      args.micro_batch_size, compute_complexity, args.static_compute_power)
+        if config.timers is not None:
+                config.timers('joint-optimization', log_level=1).start()
+        print_rank_0(f"Profiling and optimizing at iter {iteration}")
+        if args.static_group_communication or args.dynamic_workload_allocation:
+            data_alloc, groups = dalos.optimize()
+            print_rank_0(f"New allocation: {data_alloc}. New groups: {groups}")
+        else:
+            data_alloc = dalos.solve_data_distribution(args.heuristic_group_communication)
+            print_rank_0(f"New allocation: {data_alloc}")
+        update_num_microbatches(args.consumed_train_samples, consistency_check=False, workload_allocation=data_alloc)
+        mpu.build_temporary_groups(groups)
+        if config.timers is not None:
+            config.timers('joint-optimization', log_level=1).stop()
 
     while iteration < args.train_iters:
         if args.profile and \
@@ -1037,6 +1061,20 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         if args.dynamic_train_delay and (args.train_delay_interval > 0) \
             and (iteration % args.train_delay_interval == 0):
             config.train_delay = max(round(random.gauss(args.train_delay_mean, args.train_delay_var ** 0.5)), 0)
+        if iteration > 0 and (args.profile_interval > 0) and (iteration % args.profile_interval == 0):
+            if config.timers is not None:
+                config.timers('joint-optimization', log_level=1).start()
+            print_rank_0(f"Profiling and optimizing at iter {iteration}")
+            if args.static_group_communication or args.dynamic_workload_allocation:
+                data_alloc, groups = dalos.optimize()
+                print_rank_0(f"New allocation: {data_alloc}. New groups: {groups}")
+                mpu.build_temporary_groups(groups)
+            else:
+                data_alloc = dalos.solve_data_distribution(args.heuristic_group_communication)
+                print_rank_0(f"New allocation: {data_alloc}")
+            update_num_microbatches(args.consumed_train_samples, consistency_check=False, workload_allocation=data_alloc)
+            if config.timers is not None:
+                config.timers('joint-optimization', log_level=1).stop()
 
         # Update number of microbatches first without consistency check to decide if a
         # checkpoint should be saved. If the number of microbatches is different
