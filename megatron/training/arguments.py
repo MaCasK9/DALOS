@@ -542,6 +542,9 @@ def validate_args(args, defaults={}):
         args.profile_tensor_size = (2048, 2048)
     else:
         args.profile_tensor_size = tuple(args.profile_tensor_size)
+    if args.static_compute_power is not None:
+        assert len(args.static_compute_power) == args.world_size, \
+            "compute power should be given for all ranks."
 
     if args.dynamic_train_delay:
         assert args.static_train_delay is None, \
@@ -569,6 +572,9 @@ def validate_args(args, defaults={}):
     if args.dynamic_workload_allocation or args.dynamic_group_communication:
         assert args.profile_interval > 0, \
             "dynamic workload allocation or group communication need profiling."
+    args.dalos_optimize = args.static_group_communication or args.dynamic_workload_allocation or \
+                          ((args.static_workload_allocation or args.dynamic_workload_allocation) and \
+                           (args.heuristic_group_communication is not None))
 
     # Print arguments.
     _print_args("arguments", args)
@@ -1746,5 +1752,7 @@ def _add_dalos_args(parser):
                        'Default is 0, never profile.')
     group.add_argument('--profile-tensor-size', type=int, default=[2048, 2048], nargs='*',
                        help='Size of tensor used in communicate environment profile')
+    group.add_argument('--static-compute-power', type=float, default=None, nargs='*',
+                       help='If given, no profiling of compute power.')
     
     return parser
