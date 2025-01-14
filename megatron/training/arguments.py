@@ -545,7 +545,7 @@ def validate_args(args, defaults={}):
     if args.static_compute_power is not None:
         assert len(args.static_compute_power) == args.world_size, \
             "compute power should be given for all ranks."
-
+    args.dalos_optimize = False
     if args.dynamic_train_delay:
         assert args.static_train_delay is None, \
             "train delay can't be static AND dynamic."
@@ -559,6 +559,8 @@ def validate_args(args, defaults={}):
     if ((args.heuristic_workload_allocation is not None) + \
         args.static_workload_allocation + args.dynamic_workload_allocation) == 1:
         args.workload_allocation = True
+        if args.heuristic_workload_allocation is None:
+            args.dalos_optimize = True
     else:
         args.workload_allocation = False
     assert ((args.heuristic_group_communication is not None) + \
@@ -567,14 +569,13 @@ def validate_args(args, defaults={}):
     if ((args.heuristic_group_communication is not None) + \
         args.static_group_communication + args.dynamic_group_communication) == 1:
         args.group_communication = True
+        if args.heuristic_group_communication is None:
+            args.dalos_optimize = True
     else:
         args.group_communication = False
     if args.dynamic_workload_allocation or args.dynamic_group_communication:
         assert args.profile_interval > 0, \
             "dynamic workload allocation or group communication need profiling."
-    args.dalos_optimize = args.static_group_communication or args.dynamic_workload_allocation or \
-                          ((args.static_workload_allocation or args.dynamic_workload_allocation) and \
-                           (args.heuristic_group_communication is not None))
 
     # Print arguments.
     _print_args("arguments", args)
@@ -1754,5 +1755,7 @@ def _add_dalos_args(parser):
                        help='Size of tensor used in communicate environment profile')
     group.add_argument('--static-compute-power', type=float, default=None, nargs='*',
                        help='If given, no profiling of compute power.')
+    group.add_argument('--dalos-optimizer', type=str, default='joint', choices=['joint', 'add', 'net', 'compute'],
+                       help='DALOS optimizer to use if need.')
     
     return parser

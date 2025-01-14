@@ -1034,19 +1034,20 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         compute_complexity = 96 * args.seq_length * args.num_layers * \
                             (args.hidden_size ** 2) * (1 + args.seq_length / (6 * args.hidden_size) + \
                              args.padded_vocab_size / (16 * args.num_layers * args.hidden_size))
-        dalos = DALOS(args.world_size, args.num_paras, args.fp16, \
-                      args.micro_batch_size, compute_complexity, args.static_compute_power)
+        dalos = DALOS(args.dalos_optimizer, args.world_size, args.num_paras, args.fp16, \
+                      args.micro_batch_size, get_current_global_batch_size(), compute_complexity, args.static_compute_power)
         if config.timers is not None:
                 config.timers('joint-optimization', log_level=1).start()
         print_rank_0(f"Profiling and optimizing at iter {iteration}")
-        if args.static_group_communication or args.dynamic_workload_allocation:
-            data_alloc, groups = dalos.optimize()
-            print_rank_0(f"New allocation: {data_alloc}. New groups: {groups}")
-        else:
+        if args.heuristic_group_communication and args.dalos_optimizer == 'joint':
             data_alloc = dalos.solve_data_distribution(args.heuristic_group_communication)
-            print_rank_0(f"New allocation: {data_alloc}")
+            groups = None
+        else:
+            data_alloc, groups = dalos.optimize()
+        print_rank_0(f"New allocation: {data_alloc}. New groups: {groups}")
         update_num_microbatches(args.consumed_train_samples, consistency_check=False, workload_allocation=data_alloc)
-        mpu.build_temporary_groups(groups)
+        if groups is not None:
+            mpu.build_temporary_groups(groups)
         if config.timers is not None:
             config.timers('joint-optimization', log_level=1).stop()
 
@@ -1065,14 +1066,15 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             if config.timers is not None:
                 config.timers('joint-optimization', log_level=1).start()
             print_rank_0(f"Profiling and optimizing at iter {iteration}")
-            if args.static_group_communication or args.dynamic_workload_allocation:
-                data_alloc, groups = dalos.optimize()
-                print_rank_0(f"New allocation: {data_alloc}. New groups: {groups}")
-                mpu.build_temporary_groups(groups)
-            else:
+            if args.heuristic_group_communication and args.dalos_optimizer == 'joint':
                 data_alloc = dalos.solve_data_distribution(args.heuristic_group_communication)
-                print_rank_0(f"New allocation: {data_alloc}")
+                groups = None
+            else:
+                data_alloc, groups = dalos.optimize()
+            print_rank_0(f"New allocation: {data_alloc}. New groups: {groups}")
             update_num_microbatches(args.consumed_train_samples, consistency_check=False, workload_allocation=data_alloc)
+            if groups is not None:
+                mpu.build_temporary_groups(groups)
             if config.timers is not None:
                 config.timers('joint-optimization', log_level=1).stop()
 
