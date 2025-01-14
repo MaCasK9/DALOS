@@ -697,7 +697,8 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
         'optimizer-count-zeros',
         'optimizer-inner-step',
         'optimizer-copy-main-to-model-params',
-        'optimizer']
+        'optimizer',
+        'joint-optimization']
 
     # Calculate batch size.
     batch_size = args.micro_batch_size * args.data_parallel_size * \
