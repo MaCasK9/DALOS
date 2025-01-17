@@ -5,6 +5,7 @@ import math
 import time
 
 from .global_vars import get_args
+from .utils import print_rank_0
 from .dynamicDP.optimizer.JointOptimizer import JointOptimizer
 from .dynamicDP.optimizer.SimpleAdditiveOptimizer import SimpleAdditiveOptimizer
 from .dynamicDP.optimizer.NetworkOnlyOptimizer import NetworkOnlyOptimizer
@@ -56,6 +57,7 @@ class DALOS():
 
         if self.optimizer_type in ['joint', 'add', 'net']:
             bandwidth_matrix, latency_matrix = self.profile_network()
+            print_rank_0(f"bdw_mtx: {bandwidth_matrix}\nltc_mtx: {latency_matrix}")
         else:
             bandwidth_matrix, latency_matrix = None, None
 
@@ -68,7 +70,7 @@ class DALOS():
 
         if self.optimizer_type in ['joint', 'add', 'compute']:
             unit = self.current_global_batch_size // self.micro_batch_size
-            data_alloc = [round(x*unit) for x in result['data_distribution']]
+            data_alloc = [max(round(x*unit),1) for x in result['data_distribution']]
             self.current_global_batch_size = sum(data_alloc) * self.micro_batch_size
         else:
             data_alloc = None
@@ -78,7 +80,7 @@ class DALOS():
             groups = None
         return data_alloc, groups
     
-    def solve_data_distribution(self, groups):
+    def solve_data_distribution(self, groups, verbose='0'):
         assert self.optimizer_type == 'joint', \
             "heuristic group communication with static/dynamic workload allocation is only for joint optimizer"
 
@@ -87,11 +89,20 @@ class DALOS():
             pass
         else:
             compute_power = self.static_compute_power
+        if verbose >= 1:
+            print_rank_0(f"compute power: {compute_power}")
 
+        bandwidth_matrix, latency_matrix = self.profile_network()
+        print_rank_0(f"bdw_mtx: {bandwidth_matrix}\nltc_mtx: {latency_matrix}")
+
+        self.optimizer.bandwidth_matrix = bandwidth_matrix
+        self.optimizer.latency_matrix = latency_matrix
+        if verbose >= 1:
+            print_rank_0(f"current global batch size: {self.current_global_batch_size}, compute complexity: {self.compute_complexity}, grad size: {self.grad_size}")
         result = self.optimizer._solve_data_distribution(groups, compute_power, self.get_batch())
-
+        print_rank_0(f"Original result: {result}")
         unit = self.current_global_batch_size // self.micro_batch_size
-        data_alloc = [round(x*unit) for x in result['data_distribution']]
+        data_alloc = [max(round(x*unit),1) for x in result]
         self.current_global_batch_size = sum(data_alloc) * self.micro_batch_size
         return data_alloc
 
@@ -144,14 +155,16 @@ class DALOS():
                     send_time = end_time - mid_time
                     recv_time = mid_time - start_time
                 # ltc_local_dict[target] = [send_time, recv_time]
-                ltc_local_dict[target] = (send_time + recv_time) // 2
+                ltc_local_dict[target] = (send_time + recv_time) // 2 // 1e6
             # ltc_local_dict[rank] = [0, 0]
             ltc_local_dict[rank] = 0
             ltc_local = []
             for r in range(args.world_size):
                 ltc_local.append(ltc_local_dict[r])
-            ltc_local = torch.tensor(ltc_local, dtype=torch.int, device='cuda')
-            ltc_matrix = [torch.zeros_like(ltc_local, device='cuda')] * args.world_size
+            ltc_local = torch.tensor(ltc_local, dtype=torch.int64, device='cuda')
+            ltc_matrix = []
+            for _ in range(args.world_size):
+                ltc_matrix.append(torch.zeros_like(ltc_local, device='cuda'))
             torch.distributed.all_gather(ltc_matrix, ltc_local)
 
             # Next profile bandwidth
@@ -188,14 +201,16 @@ class DALOS():
                     send_time = end_time - mid_time
                     recv_time = mid_time - start_time
                 # bdw_local_dict[target] = [tensor_size/send_time*1e9, tensor_size/recv_time*1e9]
-                bdw_local_dict[target] = (tensor_size/send_time*1e9 + tensor_size/recv_time*1e9) / 2
+                bdw_local_dict[target] = (tensor_size/send_time + tensor_size/recv_time) / 2
             # bdw_local_dict[rank] = [0.0, 0.0]
             bdw_local_dict[rank] = 0.0
             bdw_local = []
             for r in range(args.world_size):
                 bdw_local.append(bdw_local_dict[r])
             bdw_local = torch.tensor(bdw_local, dtype=torch.float, device='cuda')
-            bdw_matrix = [torch.zeros_like(bdw_local, device='cuda')] * args.world_size
+            bdw_matrix = []
+            for _ in range(args.world_size):
+                bdw_matrix.append(torch.zeros_like(bdw_local, device='cuda'))
             torch.distributed.all_gather(bdw_matrix, bdw_local)
 
             return np.stack([bdw.cpu().numpy() for bdw in bdw_matrix], axis=0), np.stack([ltc.cpu().numpy() for ltc in ltc_matrix], axis=0)

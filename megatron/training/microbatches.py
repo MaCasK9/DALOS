@@ -14,12 +14,12 @@ def build_num_microbatches_calculator(args):
     # Imbalance num micro-batches used for workload allocation.
     if args.heuristic_workload_allocation is not None:
         num_microbatches_calculator = ImbalanceNumMicroBatches(
-            args.micro_batch_size, args.data_parallel_size,
+            args.micro_batch_size, args.global_batch_size, args.data_parallel_size,
             mpu.get_data_parallel_rank(), args.heuristic_workload_allocation
         )
     elif args.static_workload_allocation or args.dynamic_workload_allocation:
         num_microbatches_calculator = ImbalanceNumMicroBatches(
-            args.micro_batch_size, args.data_parallel_size,
+            args.micro_batch_size, args.global_batch_size, args.data_parallel_size,
             mpu.get_data_parallel_rank()
         )
 
@@ -160,12 +160,13 @@ class RampupBatchsizeNumMicroBatches(NumMicroBatchesCalculator):
                                  self.micro_batch_times_data_parallel_size
 
 class ImbalanceNumMicroBatches(NumMicroBatchesCalculator):
-    def __init__(self, micro_batch_size, data_parallel_size, dp_rank, workload_allocation=None):
+    def __init__(self, micro_batch_size, global_batch_size, data_parallel_size, dp_rank, workload_allocation=None):
         self.micro_batch_size = micro_batch_size
+        self.current_global_batch_size = global_batch_size
         self.data_parallel_size = data_parallel_size
         self.dp_rank = dp_rank
         if workload_allocation is None:
-            self.workload_allocation = [1] * data_parallel_size
+            self.workload_allocation = [global_batch_size//(micro_batch_size*data_parallel_size) for _ in range(self.data_parallel_size)]
         else:
             self.workload_allocation = workload_allocation
         self.num_micro_batches = self.workload_allocation[self.dp_rank]

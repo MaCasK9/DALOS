@@ -698,7 +698,10 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
         'optimizer-inner-step',
         'optimizer-copy-main-to-model-params',
         'optimizer',
-        'joint-optimization']
+        'joint-optimization',
+        'inner-group allreduce',
+        'inter-group allreduce',
+        'inner-group boardcast']
 
     # Calculate batch size.
     batch_size = args.micro_batch_size * args.data_parallel_size * \
@@ -1041,7 +1044,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 config.timers('joint-optimization', log_level=1).start()
         print_rank_0(f"Profiling and optimizing at iter {iteration}")
         if args.heuristic_group_communication and args.dalos_optimizer == 'joint':
-            data_alloc = dalos.solve_data_distribution(args.heuristic_group_communication)
+            data_alloc = dalos.solve_data_distribution(args.heuristic_group_communication, verbose=1)
             groups = None
         else:
             data_alloc, groups = dalos.optimize()

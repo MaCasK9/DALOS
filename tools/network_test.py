@@ -66,7 +66,7 @@ if __name__ == "__main__":
     ltc_local = []
     for r in range(world_size):
         ltc_local.append(ltc_local_dict[r])
-    ltc_local = torch.tensor(ltc_local, dtype=torch.int, device='cuda')
+    ltc_local = torch.tensor(ltc_local, dtype=torch.int64, device='cuda')
     ltc_matrix = []
     for _ in range(world_size):
         ltc_matrix.append(torch.zeros_like(ltc_local, device='cuda'))
