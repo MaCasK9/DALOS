@@ -27,6 +27,8 @@ if __name__ == "__main__":
         ranks[:] = [ranks[0], ranks[-1]] + ranks[1:-1]
         return target
 
+    dummy_tensor = torch.tensor([0], dtype=torch.float32, device='cuda')
+
     # First profile latency
     ranks = list(range(((world_size+1)>>1)*2))
     ltc_local_dict = {}
@@ -38,6 +40,7 @@ if __name__ == "__main__":
             send_time = 0
             recv_time = 0
         elif rank < target:
+            torch.distributed.all_reduce(dummy_tensor)
             torch.cuda.synchronize()
             start_time = time.perf_counter_ns()
             torch.distributed.send(send, target)
@@ -49,6 +52,7 @@ if __name__ == "__main__":
             send_time = mid_time - start_time
             recv_time = end_time - mid_time
         else:
+            torch.distributed.all_reduce(dummy_tensor)
             torch.cuda.synchronize()
             start_time = time.perf_counter_ns()
             torch.distributed.recv(recv, target)
@@ -60,7 +64,7 @@ if __name__ == "__main__":
             send_time = end_time - mid_time
             recv_time = mid_time - start_time
         # ltc_local_dict[target] = [send_time, recv_time]
-        ltc_local_dict[target] = (send_time + recv_time) // 2
+        ltc_local_dict[target] = (send_time + recv_time) // 2 // 1e6
     # ltc_local_dict[rank] = [0, 0]
     ltc_local_dict[rank] = 0
     ltc_local = []
@@ -84,6 +88,7 @@ if __name__ == "__main__":
             send_time = 0
             recv_time = 0
         elif rank < target:
+            #torch.distributed.all_reduce(dummy_tensor)
             torch.cuda.synchronize()
             start_time = time.perf_counter_ns()
             torch.distributed.send(send, target)
@@ -95,6 +100,7 @@ if __name__ == "__main__":
             send_time = mid_time - start_time
             recv_time = end_time - mid_time
         else:
+            #torch.distributed.all_reduce(dummy_tensor)
             torch.cuda.synchronize()
             start_time = time.perf_counter_ns()
             torch.distributed.recv(recv, target)
@@ -106,7 +112,7 @@ if __name__ == "__main__":
             send_time = end_time - mid_time
             recv_time = mid_time - start_time
         # bdw_local_dict[target] = [tensor_size/send_time*1e9, tensor_size/recv_time*1e9]
-        bdw_local_dict[target] = (tensor_size/send_time*1e9 + tensor_size/recv_time*1e9) / 2
+        bdw_local_dict[target] = (tensor_size/send_time + tensor_size/recv_time) / 2
     # bdw_local_dict[rank] = [0.0, 0.0]
     bdw_local_dict[rank] = 0.0
     bdw_local = []

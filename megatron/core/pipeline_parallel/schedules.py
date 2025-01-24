@@ -419,13 +419,10 @@ def forward_backward_no_pipelining(
     if not forward_only:
         backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, config)
 
-    if workload_allocation:
-        torch.distributed.all_reduce(total_num_tokens, group=mpu.get_data_parallel_group())
-
     if config.finalize_model_grads_func is not None and not forward_only:
         # Finalize model grads (perform full grad all-reduce / reduce-scatter for
         # data parallelism and layernorm all-reduce for sequence parallelism).
-        config.finalize_model_grads_func([model], total_num_tokens)
+        config.finalize_model_grads_func([model], total_num_tokens, workload_allocation)
 
     if config.timers is not None:
         config.timers('forward-backward').stop()

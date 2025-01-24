@@ -1035,16 +1035,19 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         # F = 96Bsl(h^2)*(1+s/6h+V/16lh)
         # FLOPs estimate from megatron paper
         # Here B is ignored since we need FLOPs of one sample
-        compute_complexity = 96 * args.seq_length * args.num_layers * \
-                            (args.hidden_size ** 2) * (1 + args.seq_length / (6 * args.hidden_size) + \
-                             args.padded_vocab_size / (16 * args.num_layers * args.hidden_size))
+        # compute_complexity = 96 * args.seq_length * args.num_layers * \
+        #                     (args.hidden_size ** 2) * (1 + args.seq_length / (6 * args.hidden_size) + \
+        #                      args.padded_vocab_size / (16 * args.num_layers * args.hidden_size))
+        #
+        # Man! Megatron has a FLOPS calculator
+        compute_complexity = num_floating_point_operations(args, 1)
         dalos = DALOS(args.dalos_optimizer, args.world_size, args.num_paras, args.fp16, \
                       args.micro_batch_size, get_current_global_batch_size(), compute_complexity, args.static_compute_power)
         if config.timers is not None:
                 config.timers('joint-optimization', log_level=1).start()
         print_rank_0(f"Profiling and optimizing at iter {iteration}")
         if args.heuristic_group_communication and args.dalos_optimizer == 'joint':
-            data_alloc = dalos.solve_data_distribution(args.heuristic_group_communication, verbose=1)
+            data_alloc = dalos.solve_data_distribution(args.heuristic_group_communication, verbose=2)
             groups = None
         else:
             data_alloc, groups = dalos.optimize()

@@ -96,7 +96,7 @@ def _allreduce_layernorm_grads(model: List[torch.nn.Module], config: Transformer
                 buf.copy_(synced)
 
 
-def finalize_model_grads(model: List[torch.nn.Module], num_tokens: Optional[torch.Tensor] = None):
+def finalize_model_grads(model: List[torch.nn.Module], num_tokens: Optional[torch.Tensor] = None, workload_allocation: Optional[bool] = False):
     """
     All-reduce all model grads across DP replicas, layernorm grads for sequence parallelism,
     embedding grads across first and last pipeline stages (if not tied),
@@ -106,12 +106,17 @@ def finalize_model_grads(model: List[torch.nn.Module], num_tokens: Optional[torc
     config = get_model_config(model[0])
 
     # All-reduce / reduce-scatter across DP replicas.
+    # No barrier since it will block utilization
     if config.timers is not None:
-        config.timers('all-grads-sync', log_level=1).start(barrier=config.barrier_with_L1_time)
+        config.timers('all-grads-sync', log_level=1).start()
     for model_chunk in model:
         model_chunk.finish_grad_sync()
     if config.timers is not None:
         config.timers('all-grads-sync').stop()
+
+    # moved here not to affect all grads sync
+    if workload_allocation:
+        torch.distributed.all_reduce(num_tokens, group=parallel_state.get_data_parallel_group())
 
     # All-reduce layer-norm grads (for sequence parallelism).
     if config.timers is not None:

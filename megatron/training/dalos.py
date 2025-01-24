@@ -99,7 +99,7 @@ class DALOS():
         self.optimizer.latency_matrix = latency_matrix
         if verbose >= 1:
             print_rank_0(f"current global batch size: {self.current_global_batch_size}, compute complexity: {self.compute_complexity}, grad size: {self.grad_size}")
-        result = self.optimizer._solve_data_distribution(groups, compute_power, self.get_batch())
+        result = self.optimizer._solve_data_distribution(groups, compute_power, self.get_batch(), verbose)
         print_rank_0(f"Original result: {result}")
         unit = self.current_global_batch_size // self.micro_batch_size
         data_alloc = [max(round(x*unit),1) for x in result]
@@ -125,6 +125,7 @@ class DALOS():
             # First profile latency
             ranks = list(range(((args.world_size+1)>>1)*2))
             ltc_local_dict = {}
+            dummy_tensor = torch.tensor([0], dtype=torch.float32, device='cuda')
             for _ in range(((args.world_size+1)>>1)*2-1):
                 target = get_next_match(ranks, rank)
                 send = torch.randn((1,), dtype=torch.float32, device='cuda')
@@ -133,6 +134,7 @@ class DALOS():
                     send_time = 0
                     recv_time = 0
                 elif rank < target:
+                    torch.distributed.all_reduce(dummy_tensor)
                     torch.cuda.synchronize()
                     start_time = time.perf_counter_ns()
                     torch.distributed.send(send, target)
@@ -144,6 +146,7 @@ class DALOS():
                     send_time = mid_time - start_time
                     recv_time = end_time - mid_time
                 else:
+                    torch.distributed.all_reduce(dummy_tensor)
                     torch.cuda.synchronize()
                     start_time = time.perf_counter_ns()
                     torch.distributed.recv(recv, target)
