@@ -80,8 +80,8 @@ def num_floating_point_operations(args, batch_size):
     gated_linear_multiplier = 3 / 2 if args.swiglu else 1
     return (
         12
-        * batch_size
         * args.seq_length
+        * batch_size
         * args.num_layers
         * args.hidden_size
         * args.hidden_size
